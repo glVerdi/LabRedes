@@ -122,14 +122,27 @@ try:
   if protocolo == 1:
    print("O protocolo recebido é ICMP4")
    cont_ICMP4 += 1
-   with open(caminho_log_i, "a") as l: 
-    l.write("ICMP4, " + hora + ", " + str(protocolo) + ", " + str(endereço_origem) + ", " + str(endereço_destino) + ", " + str(id) + ", " + str(tamanho_total_Ip) + "\n") 
+   header_icmp4 = dados_transporte_aplicacao[:4]#Pega apenas o cabeçalho ICMP
+   if len(dados_transporte_aplicacao) < 4:
+    print("Erro ao receber pacote ICMP4, cabeçalho + dados de aplicação é menor que 4 bytes. Ignorando-o ...")
+    continue
+   icmp_type, code, checksum = struct.unpack("! B B H", header_icmp4)
+   info_icmp4 = f"Tipo: {icmp_type}, Código: {code}, Checksum: {checksum}"
+   with open(caminho_log_i, "a") as l:
+    l.write("ICMP4, " + hora + ", " + str(protocolo) + ", " + str(endereço_origem) + ", " + str(endereço_destino) + ", " + str(id) + ", " + str(tamanho_total_Ip) + ", " + info_icmp4 + "\n")
+
     
   elif protocolo == 58:
    print("O protocolo recebido é ICMP6")
    cont_ICMP6 += 1
+   header_icmp6 = dados_transporte_aplicacao[:4] # Pega apenas o cabeçalho ICMP
+   if len(dados_transporte_aplicacao) < 4:
+    print("Erro ao receber pacote ICMP6, cabeçalho + dados de aplicação é menor que 4 bytes. Ignorando-o ...")
+    continue
+   icmp_type, code, checksum = struct.unpack("! B B H", header_icmp6)
+   info_icmp6 = f"Tipo: {icmp_type}, Código: {code}, Checksum: {checksum}"
    with open(caminho_log_i, "a") as l: 
-    l.write("ICMP6, " + hora + ", " + str(protocolo) + ", " + str(endereço_origem) + ", " + str(endereço_destino) + ", " + str(id) + ", " + str(tamanho_total_Ip) + "\n") 
+    l.write("ICMP6, " + hora + ", " + str(protocolo) + ", " + str(endereço_origem) + ", " + str(endereço_destino) + ", " + str(id) + ", " + str(tamanho_total_Ip) + ", " + info_icmp6 + "\n") 
     
   elif protocolo == 6:
    print("O protocolo recebido é TCP:") 
@@ -153,20 +166,36 @@ try:
     print("O protocolo recebido é HTTP:")
     protocolo_app = "HTTP"
     cont_HTTP += 1
+    header_http = dados_aplicacao[:15]#Cabeçalho HTTP terá no mínimo 15 bytes (GET / HTTP/1.1\r\n)
+    if(len(header_http)<15):
+      print("Erro ao receber pacote HTTP, cabeçalho diferente de 15 bytes. Ignorando-o ... ") 
+      continue
+    elif header_http.startswith(b"GET") or header_http.startswith(b"POST") or header_http.startswith(b"HTTP/1.1"):
+      info_http = header_http.decode(errors='ignore').replace('\r\n', ' ')
+      with open(caminho_log_a, "a") as l:
+       l.write("HTTP, " + hora + ", " + str(endereço_origem) + ", " +  str(endereço_destino) + ", " + info_http + "\n")
 
    elif porta_origem == 53 or porta_destino == 53:
     print("O protocolo recebido é DNS:")
     protocolo_app = "DNS"
     cont_DNS += 1
+    # Precisa ter no mínimo 14 bytes (2 bytes de tamanho + 12 bytes de header DNS)
+    if len(dados_aplicacao) < 14:
+        print("Erro ao receber pacote DNS sobre TCP: tamanho insuficiente. Ignorando...")
+        continue
+    # primeiros 2 bytes do DNS = tamanho DNS
+    tamanho_dns = struct.unpack("! H", dados_aplicacao[:2])[0]
+    # agora sim cabeçalho DNS real (12 bytes)
+    header_dns = dados_aplicacao[2:14]
+    id_dns, flags_dns, qdcount, ancount, nscount, arcount = struct.unpack("! H H H H H H", header_dns)
+    info_dns = (f"ID: {id_dns}, Flags: {flags_dns}, QDCOUNT: {qdcount}, ANCOUNT: {ancount}, NSCOUNT: {nscount}, ARCOUNT: {arcount}")
+    with open(caminho_log_a, "a") as l:
+        l.write("DNS (TCP), " + hora + ", " + str(endereço_origem) + ", " + str(endereço_destino) + ", " + info_dns + "\n")
 
    elif porta_origem == 443 or porta_destino == 443:
     print("O protocolo recebido é HTTPS:")
     protocolo_app = "HTTPS"
     cont_HTTPS += 1
-
-   if protocolo_app:#Apenas se alguma aplicação suportada for recebida, senão ignora 
-    with open(caminho_log_a, "a") as l:
-     l.write(protocolo_app + ", " + hora + ", " + str(endereço_origem) + ", " +  str(endereço_destino) + ", " + str(len(dados_aplicacao)) + "\n")  
 
   elif protocolo == 17:
    print("O protocolo recebido é UDP:") 
@@ -185,20 +214,40 @@ try:
     print("O protocolo recebido é DNS:")
     protocolo_app = "DNS"
     cont_DNS += 1
+    header_dns = dados_aplicacao[:12]#Cabeçalho DNS sempre terá 12 bytes
+    if(len(header_dns)<12):
+      print("Erro ao receber pacote DNS sobre TCP, cabeçalho diferente de 12 bytes. Ignorando-o ... ") 
+      continue
+    id_dns, flags_dns, qdcount, ancount, nscount, arcount = struct.unpack("! H H H H H H", header_dns)
+    info_dns = f"ID: {id_dns}, Flags: {flags_dns}, QDCOUNT: {qdcount}, ANCOUNT: {ancount}, NSCOUNT: {nscount}, ARCOUNT: {arcount}"
+    with open(caminho_log_a, "a") as l:
+      l.write("DNS, " + hora + ", " + str(endereço_origem) + ", " +  str(endereço_destino) + ", " + info_dns + "\n")
    
    elif porta_origem in (67, 68) and porta_destino in (67,68):
     print("O protocolo recebido é DHCP:")
     protocolo_app = "DHCP"
     cont_DHCP += 1
- 
+    heaadrer_dhcp = dados_aplicacao[:240]#Cabeçalho DHCP sempre terá 240 bytes
+    if(len(heaadrer_dhcp)<240):
+      print("Erro ao receber pacote DHCP, cabeçalho diferente de 240 bytes. Ignorando-o ... ") 
+      continue
+    op, htype, hlen, hops, xid, secs, flags, ciaddr, yiaddr, siaddr, giaddr, chaddr = struct.unpack("! B B B B I H H 4s 4s 4s 4s 16s", heaadrer_dhcp[:44])
+    info_dhcp = f"Op: {op}, HType: {htype}, HLen: {hlen}, Hops: {hops}, Xid: {xid}, Secs: {secs}, Flags: {flags}"
+    with open(caminho_log_a, "a") as l:
+      l.write("DHCP, " + hora + ", " + str(endereço_origem) + ", " +  str(endereço_destino) + ", " + info_dhcp + "\n")
+
    elif porta_origem == 123 or porta_destino == 123:
     print("O protocolo recebido é NTP:")
     protocolo_app = "NTP"
     cont_NTP += 1
-
-   if protocolo_app: 
+    header_ntp = dados_aplicacao[:48]#Cabeçalho NTP sempre terá 48 bytes
+    if(len(header_ntp)<48):
+      print("Erro ao receber pacote NTP, cabeçalho diferente de 48 bytes. Ignorando-o ... ") 
+      continue
+    li_vn_mode, stratum, poll, precision, root_delay, root_dispersion, ref_id = struct.unpack("! B B B B I I 4s", header_ntp[:16])
+    info_ntp = f"LI_VN_Mode: {li_vn_mode}, Stratum: {stratum}, Poll: {poll}, Precision: {precision}, Root Delay: {root_delay}, Root Dispersion: {root_dispersion}"
     with open(caminho_log_a, "a") as l:
-     l.write(protocolo_app + ", " + hora + ", " + str(endereço_origem) + ", " +  str(endereço_destino) + ", " + str(len(dados_aplicacao)) + "\n")
+      l.write("NTP, " + hora + ", " + str(endereço_origem) + ", " +  str(endereço_destino) + ", " + info_ntp + "\n")
 
 except KeyboardInterrupt:#Caso o usuário digite Control + C o programa encerra e imprime os resultados
  print("\n Monitoramento encerrado pelo usuário ")
